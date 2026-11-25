@@ -1,0 +1,120 @@
+# conda-forge recipe (rattler-build v1 format).
+#
+# Local test build:
+#   rattler-build build --recipe packaging/conda-forge/recipe.yaml -c conda-forge
+#
+# For submission, copy this file to recipes/molsanitizer/recipe.yaml in a fork
+# of https://github.com/conda-forge/staged-recipes.
+schema_version: 1
+
+context:
+  name: molsanitizer
+  version: "0.8.0"
+
+package:
+  name: ${{ name }}
+  version: ${{ version }}
+
+source:
+  # PyPI carries wheels only (they link RDKit statically), so build from the
+  # release tag. Release tags have no "v" prefix.
+  url: https://github.com/Carlssonlab/MolSanitizer/archive/refs/tags/${{ version }}.tar.gz
+  sha256: 49b3c94e8dd9c768dcca0bde41fc6dd9b53da9b87fc9234faadc6fd57244e391
+
+build:
+  number: 0
+  script:
+    env:
+      # The tarball has no .git; do not depend on .git_archival.txt either.
+      SETUPTOOLS_SCM_PRETEND_VERSION: ${{ version }}
+      CMAKE_GENERATOR: Ninja
+      # Link against conda-forge's shared RDKit instead of the wheel SDK.
+      CMAKE_ARGS: ${{ env.get("CMAKE_ARGS", default="") }} -DMSANI_RDKIT_LINKAGE=shared
+    content: ${{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  python:
+    entry_points:
+      - msani = msani.cli:main
+      - msani_batch = msani.batchmode:main
+      - strain = msani.filtering.strain_filter:main
+      - m_ionizer = msani.moltransform.ionizer:main
+      - m_tautomerizer = msani.moltransform.tautomerizer:main
+      - gen3d = msani.conformers.conformers:main
+
+requirements:
+  build:
+    - ${{ compiler("c") }}
+    - ${{ compiler("cxx") }}
+    - ${{ stdlib("c") }}
+    - cmake >=3.20
+    - ninja
+    - if: build_platform != target_platform
+      then:
+        - python
+        - cross-python_${{ target_platform }}
+        - pybind11
+        # CMake imports rdkit to detect thread-safe substructure search.
+        - rdkit
+  host:
+    - python
+    - pip
+    - scikit-build-core >=0.9
+    - setuptools-scm >=8,<9
+    - pybind11 >=2.11
+    # The stereoisomer extension needs the 2026.09 internal-coordinate
+    # embedding and does not compile against older headers.
+    - rdkit >=2026.09
+    - librdkit >=2026.09
+    - librdkit-dev >=2026.09
+    - libboost-devel
+    - eigen
+  run:
+    - python
+    - numpy
+    - pandas
+    # RDKit's C++ ABI is not stable across releases and librdkit-dev exports
+    # no run pin, so pin to the release series the extensions were built with.
+    - ${{ pin_compatible("rdkit", upper_bound="x.x") }}
+    - ${{ pin_compatible("librdkit", upper_bound="x.x") }}
+    - pyaml
+    - platformdirs >=4
+  ignore_run_exports:
+    from_package:
+      # Boost is used header-only here; librdkit carries its own libboost pin.
+      - libboost-devel
+      # librdkit 2026.09.2 exports an exact pin on a build string that was
+      # never published; the pin_compatible entries above replace it.
+      - librdkit
+
+tests:
+  - python:
+      imports:
+        - msani
+        - msani_confgen_cpp
+        - msani_stereoisomers
+        - amsolcpp
+      pip_check: true
+  - script:
+      - msani --help
+      - gen3d --help
+      - python -c "import msani; assert msani.__version__ == '${{ version }}', msani.__version__"
+
+about:
+  homepage: https://github.com/Carlssonlab/MolSanitizer
+  repository: https://github.com/Carlssonlab/MolSanitizer
+  documentation: https://msani.readthedocs.io
+  summary: Pipeline to prepare large-scale small-molecule databases for virtual screening
+  description: |
+    MolSanitizer prepares small-molecule libraries for docking and virtual
+    screening: filtering, salt stripping, ionization, tautomer and
+    stereoisomer enumeration, and 3D conformer generation, with native
+    extensions built on RDKit.
+  license: Apache-2.0 AND BSD-3-Clause
+  license_file:
+    - LICENSE
+    - msani/cpp/amsol/LICENSE
+    # Native sources adapted from RDKit.
+    - third_party/rdkit/LICENSE
+
+extra:
+  recipe-maintainers:
+    - phonglam3103
