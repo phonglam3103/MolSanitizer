@@ -990,7 +990,10 @@ def retry_batch_dir(batch_dir, args, explicit=frozenset()):
         return 0
 
     # In whole-node mode one array task runs several jobs.
-    whole_node = re.search(r'START_IDX=\$\(\( TASK_ID \* (\d+) \)\)', script.read_text())
+    script_text = script.read_text()
+    whole_node = re.search(r'START_IDX=\$\(\( TASK_ID \* (\d+) \)\)', script_text)
+    # A batch created with --mem carries its own request in the script.
+    script_sets_memory = re.search(r'^#SBATCH\s+--mem\b', script_text, re.MULTILINE) is not None
     jobs_per_task = int(whole_node.group(1)) if whole_node else 1
 
     try:
@@ -1023,13 +1026,15 @@ def retry_batch_dir(batch_dir, args, explicit=frozenset()):
         command.append(f'--partition={args.partition}')
     if 'timelimit' in explicit:
         command.append(f'--time={args.timelimit}:00:00')
-    # Memory also applies when it comes from SLURM_MEMORY in the configuration:
-    # setting it there is a request for every one-core job.
+    # A given --mem always applies. SLURM_MEMORY from the configuration is a
+    # request for every one-core job, but it must not replace the memory the
+    # batch was created with, which may be larger.
     if args.mem is not None:
-        if not whole_node:
+        if whole_node:
+            if 'mem' in explicit:
+                print("  Warning: --mem is ignored for whole-node batches.")
+        elif 'mem' in explicit or not script_sets_memory:
             command.append(f'--mem={args.mem}')
-        elif 'mem' in explicit:
-            print("  Warning: --mem is ignored for whole-node batches.")
     command.append(script.name)
 
     if whole_node:

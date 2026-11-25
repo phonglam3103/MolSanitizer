@@ -165,7 +165,8 @@ partition (``--partition``), time limit (``-tl``), memory request (``--mem``)
 and concurrency limit (``-mj``) can be changed for the retried jobs by giving
 them on the ``--retry`` command line; any other option is ignored and reported.
 A ``SLURM_MEMORY`` set in the msani configuration is applied to retried
-one-core jobs as well, also when ``--mem`` is not given. Add ``--test`` to see
+one-core jobs when the batch was created without ``--mem``; a batch created
+with ``--mem`` keeps its own memory request unless ``--mem`` is given again. Add ``--test`` to see
 the ``sbatch`` command without submitting it. In whole-node batches a retried array task skips
 the jobs that already succeeded.
 

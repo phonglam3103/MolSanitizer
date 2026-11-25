@@ -1524,10 +1524,12 @@ class Test_MolSanitizer(unittest.TestCase):
 
         self.assertEqual(batchmode._array_spec([7, 1, 2, 3, 9, 10, 3]), '1-3,7,9-10')
 
-        def make_batch(root, name, n_jobs, locked, whole_node_cores=None):
+        def make_batch(root, name, n_jobs, locked, whole_node_cores=None, memory=None):
             batch_dir = Path(root) / name
             batch_dir.mkdir()
             script = '#!/bin/bash\n'
+            if memory:
+                script += f'#SBATCH --mem={memory}\n'
             if whole_node_cores:
                 script += f'START_IDX=$(( TASK_ID * {whole_node_cores} ))\n'
             (batch_dir / 'submit_msani.sh').write_text(script)
@@ -1607,6 +1609,18 @@ class Test_MolSanitizer(unittest.TestCase):
                 submissions, _ = retry([batch], [], configuration={'SLURM_MEMORY': '8G'})
                 self.assertEqual(submissions[0][0], [
                     'sbatch', '--array=1-3,6,8%50', '--mem=8G', 'submit_msani.sh'])
+
+            with self.subTest(msg='SLURM_MEMORY does not replace the memory of the batch'):
+                large = make_batch(temp_dir, 'large', 10, [9], memory='16G')
+                submissions, _ = retry([large], [], configuration={'SLURM_MEMORY': '4G'})
+                self.assertEqual(submissions[0][0],
+                                 ['sbatch', '--array=9%50', 'submit_msani.sh'])
+                # A typed --mem still does, in either direction.
+                for memory in ('32G', '4G'):
+                    submissions, _ = retry([large], [], ['--mem', memory],
+                                           configuration={'SLURM_MEMORY': '4G'})
+                    self.assertEqual(submissions[0][0], [
+                        'sbatch', '--array=9%50', f'--mem={memory}', 'submit_msani.sh'])
 
             with self.subTest(msg='Account and partition can be changed'):
                 submissions, output = retry([batch], [], ['-A', 'proj', '--partition', 'gpu'])
